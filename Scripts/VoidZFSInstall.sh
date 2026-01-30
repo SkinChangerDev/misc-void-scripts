@@ -18,7 +18,7 @@ PRIMARYUSER_NAME="skinchanger"
 # xbps mirror to use
 MIRROR="https://mirrors.servercentral.com/voidlinux/current"
 # base package(s) to install
-BASEPACKAGE="base-system xtools zfs zfsbootmenu micro" # death to vi
+BASEPACKAGE="base-system xtools micro" # death to vi
 
 # hostname of the system
 INSTALL_HOSTNAME="foobar"
@@ -34,7 +34,6 @@ INSTALL_KEYMAP="us"
 # create primary user
 # set primary user password
 # setup ZFS swap
-# automount ZFS home and bulk dataset
 
 bootstrap_package() {
     XBPS_ARCH=x86_64 xbps-install -S -R $MIRROR -r /mnt $1
@@ -90,16 +89,23 @@ do_zfsdevice_prep() {
     -o compatibility=openzfs-2.3-linux \
     -m none $ZPOOLNAME "$ZFSDEVICE"
 
-    zfs create -o mountpoint=none                                 $ZPOOLNAME/ROOT
-    zfs create -o mountpoint=/                 -o canmount=noauto $ZPOOLNAME/ROOT/void
-    zfs create -o mountpoint=none                                 $ZPOOLNAME/HOME
-    zfs create -o mountpoint=/home             -o canmount=noauto $ZPOOLNAME/HOME/default
-    zfs create -o mountpoint=/home/skinchanger -o canmount=no     $ZPOOLNAME/$PRIMARYUSER_NAME
-    zfs create                                 -o canmount=noauto $ZPOOLNAME/$PRIMARYUSER_NAME/Bulk0
+    zfs create  -o mountpoint=none                                  $ZPOOLNAME/ROOT
+    zfs create  -o mountpoint=/                 -o canmount=noauto  $ZPOOLNAME/ROOT/void
+    zfs create  -o mountpoint=none                                  $ZPOOLNAME/HOME
+    zfs create  -o mountpoint=/home             -o canmount=noauto  $ZPOOLNAME/HOME/default
+    zfs create  -o mountpoint=/home/skinchanger -o canmount=no      $ZPOOLNAME/$PRIMARYUSER_NAME
+    zfs create                                                      $ZPOOLNAME/$PRIMARYUSER_NAME/bulk0
+    zfs create                                                      $ZPOOLNAME/$PRIMARYUSER_NAME/data
+    # Move this to a post-install script
+    #zfs create  -o encryption=on -o keylocation=prompt \
+    #            -o keyformat=passphrase                             $ZPOOLNAME/$PRIMARYUSER_NAME/encrypted
+
 
     # for ZFSBootMenu
     zpool set bootfs=$ZPOOLNAME/ROOT/void $ZPOOLNAME
     zfs set org.zfsbootmenu:commandline="quiet" $ZPOOLNAME/ROOT
+    mkdir -p /mnt/etc/zfs
+    zpool set cachefile=/mnt/etc/zfs/zpool.cache zroot
 
     zpool export $ZPOOLNAME
     zpool import -N -R /mnt $ZPOOLNAME
@@ -125,9 +131,9 @@ do_bootstrap() {
 127.0.1.1	${INSTALL_HOSTNAME}
 
 # IPv6 hosts
-::1		localhost ip6-localhost ip6-loopback
-ff02::1		ip6-allnodes
-ff02::2		ip6-allrouters"\
+::1	localhost ip6-localhost ip6-loopback
+ff02::1	ip6-allnodes
+ff02::2	ip6-allrouters"\
     > /mnt/etc/hosts
 
     # keymap and hardware clock
@@ -143,14 +149,25 @@ HARDWARECLOCK=\"UTC\""\
     echo "$(cat /mnt/etc/default/libc-locales)
 ${INSTALL_LOCALE}"\
     > /mnt/etc/default/libc-locales
-    xbps-reconfigure -r /mnt -f glibc-locales
-
-    # generate fstab
-    xgenfstab -U /mnt
 
     # root password
     echo "set a root password"
     passwd -R /mnt
+
+    # setup ZFSBootMenu
+    mkdir -p /etc/dracut.conf.d
+    echo "$(cat /etc/dracut.conf.d/zol.conf)
+nofsck=\"yes\"
+add_dracutmodules+=\" zfs \"
+omit_dracutmodules+=\" btrfs \""\
+    > /mnt/etc/dracut.conf.d/zol.conf
+    bootstrap_package zfs zfsbootmenu
+
+    # reconfigure installed packages
+    xbps-reconfigure -r /mnt -fa
+
+    # generate fstab
+    xgenfstab -U /mnt > /mnt/etc/fstab
 }
 
 # main()
@@ -163,7 +180,6 @@ do_zfsdevice_prep
 do_bootstrap
 
 xchroot /mnt bash -c '
-xgenfstab
 generate-zbm
 '
 
