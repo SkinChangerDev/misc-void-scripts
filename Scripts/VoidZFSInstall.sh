@@ -36,7 +36,7 @@ INSTALL_KEYMAP="us"
 # setup ZFS swap
 
 bootstrap_package() {
-    XBPS_ARCH=x86_64 xbps-install -S -R $MIRROR -r /mnt $1
+    XBPS_ARCH=x86_64 xbps-install -Sy -R $MIRROR -r /mnt $@
 }
 
 do_warning_start() {
@@ -60,16 +60,12 @@ do_warning_start() {
 }
 
 do_rootdisk_prep() {
-    zpool labelclear -f "$ROOTDISK"
 
-    wipefs -a "$BOOTDEVICE"
-    wipefs -a "$ZFSDEVICE"
+    wipefs -a "$ROOTDISK"
+    sgdisk --zap-all "$ROOTDISK"
 
-    sgdisk --zap-all "$BOOTDEVICE"
-    sgdisk --zap-all "$ZFSDEVICE"
-
-    sgdisk -n "1:1m:+512m" -t "1:ef00" "$BOOTDEVICE"
-    sgdisk -n "2:0:-10m" -t "2:bf00" "$ZFSDEVICE"
+    sgdisk -n "1:1m:+512m" -t "1:ef00" "$ROOTDISK"
+    sgdisk -n "2:0:-10m" -t "2:bf00" "$ROOTDISK"
 }
 
 do_bootdevice_prep() {
@@ -89,23 +85,22 @@ do_zfsdevice_prep() {
     -o compatibility=openzfs-2.3-linux \
     -m none $ZPOOLNAME "$ZFSDEVICE"
 
-    zfs create  -o mountpoint=none                                  $ZPOOLNAME/ROOT
-    zfs create  -o mountpoint=/                 -o canmount=noauto  $ZPOOLNAME/ROOT/void
-    zfs create  -o mountpoint=none                                  $ZPOOLNAME/HOME
-    zfs create  -o mountpoint=/home             -o canmount=noauto  $ZPOOLNAME/HOME/default
-    zfs create  -o mountpoint=/home/skinchanger -o canmount=no      $ZPOOLNAME/$PRIMARYUSER_NAME
-    zfs create                                                      $ZPOOLNAME/$PRIMARYUSER_NAME/bulk0
-    zfs create                                                      $ZPOOLNAME/$PRIMARYUSER_NAME/data
+    zfs create  -o mountpoint=none                                        $ZPOOLNAME/ROOT
+    zfs create  -o mountpoint=/                       -o canmount=noauto  $ZPOOLNAME/ROOT/void
+    zfs create  -o mountpoint=none                                        $ZPOOLNAME/HOME
+    zfs create  -o mountpoint=/home                   -o canmount=noauto  $ZPOOLNAME/HOME/default
+    zfs create  -o mountpoint=/home/$PRIMARYUSER_NAME -o canmount=off     $ZPOOLNAME/$PRIMARYUSER_NAME
+    zfs create                                                            $ZPOOLNAME/$PRIMARYUSER_NAME/bulk0
+    zfs create                                                            $ZPOOLNAME/$PRIMARYUSER_NAME/data
     # Move this to a post-install script
     #zfs create  -o encryption=on -o keylocation=prompt \
     #            -o keyformat=passphrase                             $ZPOOLNAME/$PRIMARYUSER_NAME/encrypted
-
 
     # for ZFSBootMenu
     zpool set bootfs=$ZPOOLNAME/ROOT/void $ZPOOLNAME
     zfs set org.zfsbootmenu:commandline="quiet" $ZPOOLNAME/ROOT
     mkdir -p /mnt/etc/zfs
-    zpool set cachefile=/mnt/etc/zfs/zpool.cache zroot
+    zpool set cachefile=/mnt/etc/zfs/zpool.cache $ZPOOLNAME
 
     zpool export $ZPOOLNAME
     zpool import -N -R /mnt $ZPOOLNAME
@@ -154,20 +149,26 @@ ${INSTALL_LOCALE}"\
     echo "set a root password"
     passwd -R /mnt
 
-    # setup ZFSBootMenu
-    mkdir -p /etc/dracut.conf.d
-    echo "$(cat /etc/dracut.conf.d/zol.conf)
-nofsck=\"yes\"
-add_dracutmodules+=\" zfs \"
-omit_dracutmodules+=\" btrfs \""\
-    > /mnt/etc/dracut.conf.d/zol.conf
-    bootstrap_package zfs zfsbootmenu
-
-    # reconfigure installed packages
-    xbps-reconfigure -r /mnt -fa
-
     # generate fstab
-    xgenfstab -U /mnt > /mnt/etc/fstab
+    blkid > ~/tmp
+    BOOTUUID=$(grep "$BOOTDEVICE" tmp | cut -d ' ' -f 2)
+    rm ~/tmp
+    echo "\
+# See fstab(5).
+#
+# <file system>	<dir>	<type>	<options>	<dump>	<pass>
+tmpfs	/tmp		tmpfs	defaults,nosuid,nodev	0	0
+$BOOTUUID	/boot/efi	vfat	defaults	0	0"\
+    > /mnt/etc/fstab
+
+    # setup rc.local
+    echo "$(cat /mnt/etc/rc.local)
+
+# Mount zfs datasets
+zfs mount $ZPOOLNAME/HOME/default
+zfs mount $ZPOOLNAME/$PRIMARYUSER_NAME/bulk0
+zfs mount $ZPOOLNAME/$PRIMARYUSER_NAME/data"\
+    > /mnt/etc/rc.local
 }
 
 # main()
@@ -175,11 +176,14 @@ do_warning_start
 
 zgenhostid
 do_rootdisk_prep
-do_bootdevice_prep
 do_zfsdevice_prep
+do_bootdevice_prep
 do_bootstrap
 
+# install ZFSBootMenu
 xchroot /mnt bash -c '
+xbps-install -Sy zfs zfsbootmenu
+sed -i "s/ManageImages: false/ManageImages: true/g" /etc/zfsbootmenu/config.yaml
 generate-zbm
 '
 
