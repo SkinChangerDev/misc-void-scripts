@@ -18,7 +18,7 @@ PRIMARYUSER_NAME="skinchanger"
 # xbps mirror to use
 MIRROR="https://mirrors.servercentral.com/voidlinux/current"
 # base package(s) to install
-BASEPACKAGE="base-system xtools micro" # death to vi
+BASEPACKAGE="base-system"
 
 # hostname of the system
 INSTALL_HOSTNAME="foobar"
@@ -34,6 +34,11 @@ INSTALL_KEYMAP="us"
 # create primary user
 # set primary user password
 # setup ZFS swap
+# switch to non-systemd components
+# - elogind -> turnstile seatd acpid
+# add syslog daemon
+# add cron daemon
+# add ntpd daemon
 
 bootstrap_package() {
     XBPS_ARCH=x86_64 xbps-install -Sy -R $MIRROR -r /mnt $@
@@ -113,7 +118,7 @@ do_zfsdevice_prep() {
 
 do_bootstrap() {
     # base system
-    bootstrap_package $BASEPACKAGE
+    bootstrap_package $BASEPACKAGE zfs zfsbootmenu systemd-boot-efistub efibootmgr
 
     # hostid
     cp /etc/hostid /mnt/etc
@@ -169,6 +174,31 @@ zfs mount $ZPOOLNAME/HOME/default
 zfs mount $ZPOOLNAME/$PRIMARYUSER_NAME/bulk0
 zfs mount $ZPOOLNAME/$PRIMARYUSER_NAME/data"\
     > /mnt/etc/rc.local
+
+    # configure ZFSBootMenu
+    echo "\
+Global:
+  ManageImages: true
+  BootMountPoint: /boot/efi
+  DracutConfDir: /etc/zfsbootmenu/dracut.conf.d
+  PreHooksDir: /etc/zfsbootmenu/generate-zbm.pre.d
+  PostHooksDir: /etc/zfsbootmenu/generate-zbm.post.d
+  InitCPIOConfig: /etc/zfsbootmenu/mkinitcpio.conf
+Components:
+  ImageDir: /boot/efi/EFI/zbm
+  Versions: 3
+  Enabled: false
+EFI:
+  ImageDir: /boot/efi/EFI/zbm
+  Versions: false
+  Enabled: true
+  SplashImage: /etc/zfsbootmenu/splash.bmp
+Kernel:
+  CommandLine: ro quiet loglevel=0"\
+    > /mnt/etc/zfsbootmenu/config.yaml
+
+    # force reconfigure all packages
+    xbps-reconfigure -fa -r /mnt
 }
 
 # main()
@@ -180,12 +210,10 @@ do_zfsdevice_prep
 do_bootdevice_prep
 do_bootstrap
 
-# install ZFSBootMenu
-xchroot /mnt bash -c '
-xbps-install -Sy zfs zfsbootmenu
-sed -i "s/ManageImages: false/ManageImages: true/g" /etc/zfsbootmenu/config.yaml
-generate-zbm
-'
+# generate EFI boot images
+xchroot /mnt bash -c 'generate-zbm'
+efibootmgr -c -d "$ROOTDISK" -p "1" -L "ZFSBootMenu" -l '\EFI\ZBM\VMLINUZ.EFI'
+efibootmgr -c -d "$ROOTDISK" -p "1" -L "ZFSBootMenu (Backup)" -l '\EFI\ZBM\VMLINUZ-BACKUP.EFI'
 
 umount -n -R /mnt
 zpool export $ZPOOLNAME
