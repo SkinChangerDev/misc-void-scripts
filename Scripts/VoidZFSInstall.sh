@@ -93,8 +93,8 @@ do_zfsdevice_prep() {
     zfs create  -o mountpoint=none                                         $ZPOOLNAME/HOME
     zfs create  -o mountpoint=/home                   -o canmount=noauto   $ZPOOLNAME/HOME/default
     zfs create  -o mountpoint=/home/$PRIMARYUSER_NAME -o canmount=off      $ZPOOLNAME/$PRIMARYUSER_NAME
-    zfs create                                                             $ZPOOLNAME/$PRIMARYUSER_NAME/bulk0
-    zfs create                                                             $ZPOOLNAME/$PRIMARYUSER_NAME/data
+    zfs create                                                             $ZPOOLNAME/$PRIMARYUSER_NAME/Bulk0
+    zfs create                                                             $ZPOOLNAME/$PRIMARYUSER_NAME/Data
 
     # create encrypted dataset
     echo "Creating encrypted user dataset, set a passphrase:"
@@ -173,8 +173,8 @@ $BOOTUUID	/boot/efi	vfat	defaults	0	0
 
 # Mount zfs datasets
 zfs mount $ZPOOLNAME/HOME/default
-zfs mount $ZPOOLNAME/$PRIMARYUSER_NAME/bulk0
-zfs mount $ZPOOLNAME/$PRIMARYUSER_NAME/data"\
+zfs mount $ZPOOLNAME/$PRIMARYUSER_NAME/Bulk0
+zfs mount $ZPOOLNAME/$PRIMARYUSER_NAME/Data"\
     > /mnt/etc/rc.local
 
     # configure ZFSBootMenu

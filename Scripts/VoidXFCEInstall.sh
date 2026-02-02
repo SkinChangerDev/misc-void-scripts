@@ -1,9 +1,36 @@
 #!/bin/bash -e
 # designed to be used with VoidZFSInstall.sh
 
-# TODO:
-# setup XDG dirs
-# install elogind
-# install labwc and xorg
-# install xfce
-# install lightdm
+# util packages
+UTILPACKAGE="xdg-user-dirs"
+# gui packages
+GUIPACKAGE="labwc xorg-minimal xorg-server-xwayland xfce4 lightdm"
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "this script needs to be run as root"
+    exit 1
+fi
+
+xbps-install -Sy $UTILPACKAGE
+echo "\
+# Default settings for user directories
+#
+# The values are relative pathnames from the home directory and
+# will be translated on a per-path-element basis into the users locale
+DESKTOP=Data/Desktop
+DOWNLOAD=Bulk0/Downloads
+TEMPLATES=Data/Templates
+PUBLICSHARE=Data/Public
+DOCUMENTS=Data/Documents
+MUSIC=Data/Music
+PICTURES=Data/Pictures
+VIDEOS=Data/Videos"\
+    > $XDG_CONFIG_DIRS/user-dirs.defaults
+    xdg-user-dirs-update
+
+xbps-install -Sy $GUIPACKAGE
+
+touch /etc/sv/lightdm/down
+ln -s /etc/sv/lightdm /var/service/
+
+echo "Verify that LightDM works with 'sv once lightdm', then enable it with 'rm /etc/sv/lightdm/down'"
