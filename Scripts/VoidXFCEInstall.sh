@@ -5,7 +5,7 @@
 # util packages
 UTILPACKAGE="xdg-user-dirs"
 # gui packages
-GUIPACKAGE="xorg-minimal xorg-video-drivers xorg-input-drivers xfce4 lightdm"
+GUIPACKAGE="xorg-minimal xorg-video-drivers xorg-input-drivers xfce4 lightdm lightdm-gtk-greeter"
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "this script needs to be run as root"

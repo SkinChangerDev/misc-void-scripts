@@ -18,7 +18,7 @@ SWAPSIZE="4G"
 # xbps mirror to use
 MIRROR="https://mirrors.servercentral.com/voidlinux/current"
 # base package(s) to install
-BASEPACKAGE="base-system socklog cronie ntp xtools micro" # death to vi
+BASEPACKAGE="base-system socklog cronie ntp xtools htop micro" # death to vi
 # bootloader packages to install
 BOOTPACKAGE="zfs zfsbootmenu systemd-boot-efistub efibootmgr"
 
