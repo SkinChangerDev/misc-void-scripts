@@ -12,13 +12,15 @@ BOOTDEVICE="${ROOTDISK}p1"
 ZFSDEVICE="${ROOTDISK}p2"
 # name of the main zfs pool
 ZPOOLNAME="zpool0"
-# name of the primary user
-PRIMARYUSER_NAME="skinchanger"
+# size of the swap volume
+SWAPSIZE="4G"
 
 # xbps mirror to use
 MIRROR="https://mirrors.servercentral.com/voidlinux/current"
 # base package(s) to install
-BASEPACKAGE="base-system"
+BASEPACKAGE="base-system socklog cronie ntp xtools micro" # death to vi
+# bootloader packages to install
+BOOTPACKAGE="zfs zfsbootmenu systemd-boot-efistub efibootmgr"
 
 # hostname of the system
 INSTALL_HOSTNAME="foobar"
@@ -30,15 +32,10 @@ INSTALL_TIMEZOME="America/Chicago"
 # default keymap of the system
 INSTALL_KEYMAP="us"
 
-# TODO:
-# create primary user
-# set primary user password
-# setup ZFS swap
-# switch to non-systemd components
-# - elogind -> turnstile seatd acpid
-# add syslog daemon
-# add cron daemon
-# add ntpd daemon
+# name of the primary user
+PRIMARYUSER_NAME="alice"
+# groups of the primary user
+PRIMARYUSER_GROUPS="wheel,audio,video,floppy,cdrom,optical,kvm,users,xbuilder,socklog"
 
 bootstrap_package() {
     XBPS_ARCH=x86_64 xbps-install -Sy -R $MIRROR -r /mnt $@
@@ -90,23 +87,31 @@ do_zfsdevice_prep() {
     -o compatibility=openzfs-2.3-linux \
     -m none $ZPOOLNAME "$ZFSDEVICE"
 
-    zfs create  -o mountpoint=none                                        $ZPOOLNAME/ROOT
-    zfs create  -o mountpoint=/                       -o canmount=noauto  $ZPOOLNAME/ROOT/void
-    zfs create  -o mountpoint=none                                        $ZPOOLNAME/HOME
-    zfs create  -o mountpoint=/home                   -o canmount=noauto  $ZPOOLNAME/HOME/default
-    zfs create  -o mountpoint=/home/$PRIMARYUSER_NAME -o canmount=off     $ZPOOLNAME/$PRIMARYUSER_NAME
-    zfs create                                                            $ZPOOLNAME/$PRIMARYUSER_NAME/bulk0
-    zfs create                                                            $ZPOOLNAME/$PRIMARYUSER_NAME/data
-    # Move this to a post-install script
-    #zfs create  -o encryption=on -o keylocation=prompt \
-    #            -o keyformat=passphrase                             $ZPOOLNAME/$PRIMARYUSER_NAME/encrypted
+    # create unencrypted datasets
+    zfs create  -o mountpoint=none                                         $ZPOOLNAME/ROOT
+    zfs create  -o mountpoint=/                       -o canmount=noauto   $ZPOOLNAME/ROOT/void
+    zfs create  -o mountpoint=none                                         $ZPOOLNAME/HOME
+    zfs create  -o mountpoint=/home                   -o canmount=noauto   $ZPOOLNAME/HOME/default
+    zfs create  -o mountpoint=/home/$PRIMARYUSER_NAME -o canmount=off      $ZPOOLNAME/$PRIMARYUSER_NAME
+    zfs create                                                             $ZPOOLNAME/$PRIMARYUSER_NAME/bulk0
+    zfs create                                                             $ZPOOLNAME/$PRIMARYUSER_NAME/data
 
-    # for ZFSBootMenu
+    # create encrypted dataset
+    echo "Creating encrypted user dataset, set a passphrase:"
+    zfs create  -o encryption=on -o keylocation=prompt \
+                -o keyformat=passphrase                                    $ZPOOLNAME/$PRIMARYUSER_NAME/encrypted
+
+    # create swap volume
+    zfs create -V $SWAPSIZE -o compression=off -o dedup=off -o sync=always $ZPOOLNAME/swap
+    mkswap /dev/zvol/$ZPOOLNAME/swap
+
+    # set properties for ZFSBootMenu
     zpool set bootfs=$ZPOOLNAME/ROOT/void $ZPOOLNAME
     zfs set org.zfsbootmenu:commandline="quiet" $ZPOOLNAME/ROOT
     mkdir -p /mnt/etc/zfs
     zpool set cachefile=/mnt/etc/zfs/zpool.cache $ZPOOLNAME
 
+    # mount the new datasets
     zpool export $ZPOOLNAME
     zpool import -N -R /mnt $ZPOOLNAME
     zfs mount $ZPOOLNAME/ROOT/void
@@ -117,13 +122,13 @@ do_zfsdevice_prep() {
 }
 
 do_bootstrap() {
-    # base system
-    bootstrap_package $BASEPACKAGE zfs zfsbootmenu systemd-boot-efistub efibootmgr
+    # install packages
+    bootstrap_package $BASEPACKAGE $BOOTPACKAGE
 
-    # hostid
+    # set hostid
     cp /etc/hostid /mnt/etc
 
-    # hostname
+    # set hostname
     echo "$INSTALL_HOSTNAME" > /mnt/etc/hostname
     echo "\
 # IPv4 hosts
@@ -142,28 +147,25 @@ KEYMAP=\"${INSTALL_KEYMAP}\"
 HARDWARECLOCK=\"UTC\""\
     > /mnt/etc/rc.conf
 
-    # timezone
+    # set timezone
     ln -sf /mnt/usr/share/zoneinfo/$INSTALL_TIMEZOME /mnt/etc/localtime
 
-    # glibc locale
+    # set glibc locale
     echo "$(cat /mnt/etc/default/libc-locales)
 ${INSTALL_LOCALE}"\
     > /mnt/etc/default/libc-locales
 
-    # root password
-    echo "set a root password"
-    passwd -R /mnt
-
     # generate fstab
-    blkid > ~/tmp
+    blkid > /tmp/blkid-out
     BOOTUUID=$(grep "$BOOTDEVICE" tmp | cut -d ' ' -f 2)
-    rm ~/tmp
+    rm /tmp/blkid-out
     echo "\
 # See fstab(5).
 #
 # <file system>	<dir>	<type>	<options>	<dump>	<pass>
 tmpfs	/tmp		tmpfs	defaults,nosuid,nodev	0	0
-$BOOTUUID	/boot/efi	vfat	defaults	0	0"\
+$BOOTUUID	/boot/efi	vfat	defaults	0	0
+/dev/zvol/$ZPOOLNAME/swap	none	swap	defaults	0	0"\
     > /mnt/etc/fstab
 
     # setup rc.local
@@ -197,8 +199,24 @@ Kernel:
   CommandLine: ro quiet loglevel=0"\
     > /mnt/etc/zfsbootmenu/config.yaml
 
+    # enable services
+    ln -s /mnt/etc/sv/{dhcpd,socklog-unix,nanoklogd,cronie,isc-ntpd} /mnt/var/service
+
     # force reconfigure all packages
     xbps-reconfigure -fa -r /mnt
+}
+
+do_usersetup() {
+    # set root password
+    echo "Set a root password"
+    passwd -R /mnt
+
+    # create primary user
+    useradd -G "$PRIMARYUSER_GROUPS" -R /mnt -U "$PRIMARYUSER_NAME"
+    passwd -R /mnt "$PRIMARYUSER_NAME"
+
+    # enable sudo for wheel group
+    sed -i "s/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/g" /mnt/etc/sudoers
 }
 
 # main()
@@ -208,7 +226,9 @@ zgenhostid
 do_rootdisk_prep
 do_zfsdevice_prep
 do_bootdevice_prep
+
 do_bootstrap
+do_usersetup
 
 # generate EFI boot images
 xchroot /mnt bash -c 'generate-zbm'
