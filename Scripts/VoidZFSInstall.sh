@@ -18,7 +18,7 @@ SWAPSIZE="4G"
 # xbps mirror to use
 MIRROR="https://mirrors.servercentral.com/voidlinux/current"
 # base package(s) to install
-BASEPACKAGE="base-system socklog cronie ntp xtools htop micro" # death to vi
+BASEPACKAGE="base-system socklog-void cronie ntp xtools htop micro" # death to vi
 # bootloader packages to install
 BOOTPACKAGE="zfs zfsbootmenu systemd-boot-efistub efibootmgr"
 
@@ -35,7 +35,7 @@ INSTALL_KEYMAP="us"
 # name of the primary user
 PRIMARYUSER_NAME="alice"
 # groups of the primary user
-PRIMARYUSER_GROUPS="wheel,audio,video,floppy,cdrom,optical,kvm,users,xbuilder,socklog"
+PRIMARYUSER_GROUPS="wheel,audio,video,floppy,cdrom,optical,kvm,users,xbuilder"
 
 bootstrap_package() {
     XBPS_ARCH=x86_64 xbps-install -Sy -R $MIRROR -r /mnt $@
@@ -99,7 +99,7 @@ do_zfsdevice_prep() {
     # create encrypted dataset
     echo "Creating encrypted user dataset, set a passphrase:"
     zfs create  -o encryption=on -o keylocation=prompt \
-                -o keyformat=passphrase                                    $ZPOOLNAME/$PRIMARYUSER_NAME/encrypted
+                -o keyformat=passphrase -o canmount=noauto                 $ZPOOLNAME/$PRIMARYUSER_NAME/Encrypted
 
     # create swap volume
     zfs create -V $SWAPSIZE -o compression=off -o dedup=off -o sync=always $ZPOOLNAME/swap
@@ -142,7 +142,7 @@ ff02::2	ip6-allrouters"\
     > /mnt/etc/hosts
 
     # keymap and hardware clock
-    echo "$(cat rc.conf)
+    echo "$(cat /mnt/etc/rc.conf)
 KEYMAP=\"${INSTALL_KEYMAP}\"
 HARDWARECLOCK=\"UTC\""\
     > /mnt/etc/rc.conf
@@ -157,7 +157,7 @@ ${INSTALL_LOCALE}"\
 
     # generate fstab
     blkid > /tmp/blkid-out
-    BOOTUUID=$(grep "$BOOTDEVICE" tmp | cut -d ' ' -f 2)
+    BOOTUUID=$(grep "$BOOTDEVICE" /tmp/blkid-out | cut -d ' ' -f 2)
     rm /tmp/blkid-out
     echo "\
 # See fstab(5).
@@ -200,7 +200,7 @@ Kernel:
     > /mnt/etc/zfsbootmenu/config.yaml
 
     # enable services
-    ln -s /mnt/etc/sv/{dhcpd,socklog-unix,nanoklogd,cronie,isc-ntpd} /mnt/var/service
+    ln -s /etc/sv/{dhcpcd,socklog-unix,nanoklogd,cronie,isc-ntpd} /mnt/etc/runit/runsvdir/default/
 
     # force reconfigure all packages
     xbps-reconfigure -fa -r /mnt
@@ -208,15 +208,19 @@ Kernel:
 
 do_usersetup() {
     # set root password
-    echo "Set a root password"
+    echo "Set root password"
     passwd -R /mnt
 
     # create primary user
     useradd -G "$PRIMARYUSER_GROUPS" -R /mnt -U "$PRIMARYUSER_NAME"
+    echo "Set primary user password"
     passwd -R /mnt "$PRIMARYUSER_NAME"
 
     # enable sudo for wheel group
     sed -i "s/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/g" /mnt/etc/sudoers
+
+    # creater user mountpoints
+    mkdir -p /mnt/home/$PRIMARYUSER_NAME/{Bulk0,Data,Encrypted}
 }
 
 # main()

@@ -2,36 +2,24 @@
 # script for installing a basic xfce-based gui
 # designed to be used with VoidZFSInstall.sh
 
-# util packages
-UTILPACKAGE="xdg-user-dirs"
 # gui packages
-GUIPACKAGE="xorg-minimal xorg-video-drivers xorg-input-drivers xfce4 lightdm lightdm-gtk-greeter"
+GUIPACKAGE="xorg-minimal xorg-fonts xorg-video-drivers xorg-input-drivers xfce4 lightdm lightdm-gtk-greeter"
 
-if [ "$(id -u)" -ne 0 ]; then
-    echo "this script needs to be run as root"
-    exit 1
-fi
-
-xbps-install -Sy $UTILPACKAGE
-echo "\
-# Default settings for user directories
-#
-# The values are relative pathnames from the home directory and
-# will be translated on a per-path-element basis into the users locale
-DESKTOP=Data/Desktop
-DOWNLOAD=Bulk0/Downloads
-TEMPLATES=Data/Templates
-PUBLICSHARE=Data/Public
-DOCUMENTS=Data/Documents
-MUSIC=Data/Music
-PICTURES=Data/Pictures
-VIDEOS=Data/Videos" \
-> $XDG_CONFIG_DIRS/user-dirs.defaults
-xdg-user-dirs-update
-
+sudo bash -c "
 xbps-install -Sy $GUIPACKAGE
-
 touch /etc/sv/lightdm/down
-ln -s /etc/sv/lightdm /var/service/
+ln -s /etc/sv/{dbus,elogind,lightdm} /var/service/"
 
-echo "Verify that LightDM works with 'sv once lightdm', then enable it with 'rm /etc/sv/lightdm/down'"
+mkdir -p $HOME/.config/
+echo "\
+XDG_DESKTOP_DIR=$HOME/Data/Desktop
+XDG_DOWNLOAD_DIR=$HOME/Bulk0/Downloads
+XDG_TEMPLATES_DIR=$HOME/Data/Templates
+XDG_PUBLICSHARE_DIR=$HOME/Data/Public
+XDG_DOCUMENTS_DIR=$HOME/Data/Documents
+XDG_MUSIC_DIR=$HOME/Data/Music
+XDG_PICTURES_DIR=$HOME/Data/Pictures
+XDG_VIDEOS_DIR=$HOME/Data/Videos" \
+> $HOME/.config/user-dirs.dirs
+
+echo "Verify that LightDM after rebooting works with 'sv once lightdm', then enable it with 'rm /etc/sv/lightdm/down'"
