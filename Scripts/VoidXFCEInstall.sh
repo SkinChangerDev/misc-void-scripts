@@ -3,13 +3,14 @@
 # designed to be used with VoidZFSInstall.sh
 
 # gui packages
-GUIPACKAGE="xorg-minimal xorg-fonts xorg-video-drivers xorg-input-drivers xfce4 lightdm lightdm-gtk-greeter"
+GUIPACKAGE="xorg-minimal xorg-fonts xorg-video-drivers xorg-input-drivers xfce4 lightdm lightdm-gtk-greeter gvfs pulseaudio bluez"
 
 sudo bash -c "
 xbps-install -Sy $GUIPACKAGE
 touch /etc/sv/lightdm/down
-ln -s /etc/sv/{dbus,elogind,lightdm} /var/service/"
+ln -s /etc/sv/{dbus,elogind,lightdm,bluetoothd} /var/service/"
 
+mkdir -p /mnt/home/$PRIMARYUSER_NAME/{Bulk0,Data,Encrypted}
 mkdir -p $HOME/.config/
 echo "\
 XDG_DESKTOP_DIR=$HOME/Data/Desktop

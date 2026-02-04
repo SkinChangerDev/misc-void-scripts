@@ -218,9 +218,6 @@ do_usersetup() {
 
     # enable sudo for wheel group
     sed -i "s/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/g" /mnt/etc/sudoers
-
-    # creater user mountpoints
-    mkdir -p /mnt/home/$PRIMARYUSER_NAME/{Bulk0,Data,Encrypted}
 }
 
 # main()
